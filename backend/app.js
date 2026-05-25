@@ -12,15 +12,28 @@ import badgeRoutes from "./routes/badgeRoutes.js";
 import milestoneRoutes from "./routes/milestoneRoutes.js";
 import { errorHandler, notFound } from "./middleware/errorHandler.js";
 
+const allowedOrigins = [
+  "http://localhost:5173",
+  "http://202.10.44.139:5173",
+  "http://carbongo.site",
+  "https://carbongo.site",
+];
+
 dotenv.config();
 
 const app = express();
 
 app.use(helmet());
 app.use(cors({
-  origin: process.env.FRONTEND_URL || "http://localhost:5173",
-  credentials: true
+  origin: function (origin, callback) {
+    if (!origin || allowedOrigins.includes(origin)) {
+      return callback(null, true);
+    }
+    return callback(new Error("Not allowed by CORS"));
+  },
+  credentials: true,
 }));
+
 app.use(express.json());
 app.use(cookieParser());
 
