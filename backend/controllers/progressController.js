@@ -4,7 +4,16 @@ import { query } from "../config/db.js";
 
 export async function getMyProgress(req, res, next) {
   try {
-    const { totalCarbon, ecoPoints, todayCarbon, journeyPoints } = await syncUserAwards(req.user.id);
+    const {
+      totalCarbon,
+      ecoPoints,
+      todayCarbon,
+      journeyPoints,
+      quests,
+      rankCounts,
+      currentRank,
+      rankAchievements
+    } = await syncUserAwards(req.user.id);
     const logs = await Activity.logsByUser(req.user.id, req.query.lang);
     const badges = await query(
       `SELECT b.*, :totalCarbon AS progress_value,
@@ -12,6 +21,7 @@ export async function getMyProgress(req, res, next) {
               ub.earned_at
        FROM badges b
        LEFT JOIN user_badges ub ON ub.badge_id = b.id AND ub.user_id = :userId
+       WHERE b.name <> 'Earth Guardian'
        ORDER BY b.requirement_value`,
       { userId: req.user.id, totalCarbon }
     );
@@ -24,7 +34,19 @@ export async function getMyProgress(req, res, next) {
       { userId: req.user.id }
     );
 
-    res.json({ totalCarbon, ecoPoints, todayCarbon, journeyPoints, logs, badges, milestones });
+    res.json({
+      totalCarbon,
+      ecoPoints,
+      todayCarbon,
+      journeyPoints,
+      quests,
+      rankCounts,
+      currentRank,
+      rankAchievements,
+      logs,
+      badges,
+      milestones
+    });
   } catch (error) {
     next(error);
   }
@@ -32,29 +54,9 @@ export async function getMyProgress(req, res, next) {
 
 export async function getRankLog(req, res, next) {
   try {
-    const logs = await Activity.logsByUser(req.user.id, req.query.lang);
-    let runningTotal = 0;
-    const rankLog = [...logs].reverse().map((log) => {
-      runningTotal += Number(log.carbon_value);
-      return {
-        id: log.id,
-        activity_name: log.activity_name || log.other_activity || "Other",
-        carbon_value: Number(log.carbon_value),
-        total_after: runningTotal,
-        rank_after: rankName(runningTotal),
-        created_at: log.created_at
-      };
-    }).reverse();
-    res.json({ rankLog });
+    const { rankAchievements } = await syncUserAwards(req.user.id);
+    res.json({ rankLog: rankAchievements });
   } catch (error) {
     next(error);
   }
-}
-
-function rankName(total) {
-  if (total >= 1000) return "Climate Hero";
-  if (total >= 500) return "Earth Guardian";
-  if (total >= 250) return "Recycling Guru";
-  if (total >= 100) return "Green Thumb";
-  return "Guest";
 }

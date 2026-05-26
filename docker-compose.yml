@@ -44,6 +44,7 @@ services:
       NODE_ENV: development
       PORT: 5000
       FRONTEND_URL: http://localhost:5173
+      DASHBOARD_URL: http://localhost:5174
       DB_HOST: mysql
       DB_PORT: 3306
       DB_USER: root
@@ -54,6 +55,19 @@ services:
     ports:
       - "5001:5000"
     command: sh -c "npm run seed && npm run seed:test && npm start"
+
+  dashboard:
+    build:
+      context: .
+      dockerfile: Dockerfile.dashboard
+    container_name: carbon-go-dashboard
+    restart: unless-stopped
+    depends_on:
+      - backend
+    environment:
+      VITE_API_BASE_URL: http://localhost:5001/api
+    ports:
+      - "5174:5174"
 
 volumes:
   carbon_go_mysql_data:

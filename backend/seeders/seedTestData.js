@@ -72,7 +72,7 @@ async function createUser(index, hashedPassword) {
   return userId;
 }
 
-async function seedActivityLogs(userId, activities) {
+async function seedActivityLogs(userId, activities, userIndex) {
   const logCount = randomInt(8, 25);
 
   for (let i = 0; i < logCount; i++) {
@@ -91,6 +91,24 @@ async function seedActivityLogs(userId, activities) {
         carbonValue: useOther ? 0 : activity.carbon_value,
         note: randomItem(notes),
         createdAt
+      }
+    );
+  }
+
+  const positiveActivities = activities.filter((activity) => Number(activity.carbon_value) > 0);
+  const bonusLogCount = userIndex <= 10 ? 30 : userIndex <= 20 ? 18 : 8;
+  for (let i = 0; i < bonusLogCount; i++) {
+    const activity = randomItem(positiveActivities);
+    await query(
+      `INSERT INTO user_activity_logs
+       (user_id, activity_id, other_activity, carbon_value, note, created_at)
+       VALUES (:userId, :activityId, NULL, :carbonValue, :note, :createdAt)`,
+      {
+        userId,
+        activityId: activity.id,
+        carbonValue: activity.carbon_value,
+        note: "Guaranteed progress seed for admin monitoring",
+        createdAt: randomPastDate()
       }
     );
   }
@@ -114,8 +132,8 @@ async function main() {
     userIds.push(userId);
   }
 
-  for (const userId of userIds) {
-    await seedActivityLogs(userId, activities);
+  for (const [index, userId] of userIds.entries()) {
+    await seedActivityLogs(userId, activities, index + 1);
   }
 
   console.log("Seeded 30 test users with random activity logs.");

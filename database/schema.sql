@@ -9,6 +9,7 @@ CREATE TABLE IF NOT EXISTS users (
   username VARCHAR(80) NOT NULL UNIQUE,
   email VARCHAR(180) NOT NULL UNIQUE,
   password VARCHAR(255) NOT NULL,
+  role ENUM('user', 'admin') NOT NULL DEFAULT 'user',
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
 );
@@ -94,6 +95,19 @@ CREATE TABLE IF NOT EXISTS milestones (
   UNIQUE KEY uq_milestone_name (name)
 );
 
+CREATE TABLE IF NOT EXISTS quests (
+  id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  slug VARCHAR(120) NOT NULL UNIQUE,
+  icon VARCHAR(80) NOT NULL DEFAULT '🌱',
+  name VARCHAR(160) NOT NULL,
+  description TEXT NOT NULL,
+  requirement_value INT NOT NULL DEFAULT 0,
+  reward INT NOT NULL DEFAULT 25,
+  is_active BOOLEAN NOT NULL DEFAULT TRUE,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+);
+
 CREATE TABLE IF NOT EXISTS user_milestones (
   id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
   user_id BIGINT UNSIGNED NOT NULL,
@@ -107,6 +121,17 @@ CREATE TABLE IF NOT EXISTS user_milestones (
     ON DELETE CASCADE,
   CONSTRAINT fk_user_milestones_milestone
     FOREIGN KEY (milestone_id) REFERENCES milestones(id)
+    ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS user_rank_achievements (
+  id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  user_id BIGINT UNSIGNED NOT NULL,
+  rank_name VARCHAR(40) NOT NULL,
+  earned_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE KEY uq_user_rank (user_id, rank_name),
+  CONSTRAINT fk_user_rank_achievements_user
+    FOREIGN KEY (user_id) REFERENCES users(id)
     ON DELETE CASCADE
 );
 
@@ -197,6 +222,12 @@ ON DUPLICATE KEY UPDATE
   requirement_type = VALUES(requirement_type),
   requirement_value = VALUES(requirement_value);
 
+DELETE ub FROM user_badges ub
+JOIN badges b ON b.id = ub.badge_id
+WHERE b.name = 'Earth Guardian';
+
+DELETE FROM badges WHERE name = 'Earth Guardian';
+
 INSERT INTO milestones (name, description, target_value) VALUES
 ('First Green Step', 'Reach 25 Journey Points', 25),
 ('Carbon Reducer', 'Reach 50 Journey Points', 50),
@@ -205,3 +236,16 @@ INSERT INTO milestones (name, description, target_value) VALUES
 ON DUPLICATE KEY UPDATE
   description = VALUES(description),
   target_value = VALUES(target_value);
+
+INSERT INTO quests (slug, icon, name, description, requirement_value, reward, is_active) VALUES
+('first-green-step', '🌱', '🌱 First Green Step', 'Log your first eco-action', 50, 25, 1),
+('energy-saver', '💡', '💡 Energy Saver', 'Save energy by turning off unused devices', 150, 25, 1),
+('plastic-free', '♻️', '♻️ Plastic Free', 'Avoid single-use plastics consistently', 300, 25, 1),
+('tree-guardian', '🌳', '🌳 Tree Guardian', 'Support reforestation efforts', 500, 25, 1)
+ON DUPLICATE KEY UPDATE
+  icon = VALUES(icon),
+  name = VALUES(name),
+  description = VALUES(description),
+  requirement_value = VALUES(requirement_value),
+  reward = VALUES(reward),
+  is_active = VALUES(is_active);

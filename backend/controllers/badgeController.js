@@ -10,6 +10,7 @@ export async function getMyBadges(req, res, next) {
               ub.earned_at
        FROM badges b
        LEFT JOIN user_badges ub ON ub.badge_id = b.id AND ub.user_id = :userId
+       WHERE b.name <> 'Earth Guardian'
        ORDER BY b.requirement_value`,
       { userId: req.user.id, totalCarbon }
     );
