@@ -24,6 +24,8 @@ const allowedOrigins = new Set([
   "http://202.10.44.139:5174",
   "http://carbongo.site",
   "https://carbongo.site",
+  "http://admin.carbongo.site",
+  "https://admin.carbongo.site",
   process.env.FRONTEND_URL,
   process.env.DASHBOARD_URL,
 ].filter(Boolean));
@@ -34,6 +36,7 @@ function isAllowedOrigin(origin) {
 
   try {
     const url = new URL(origin);
+    if (url.hostname === "admin.carbongo.site") return true;
     const isLocalDevHost = ["localhost", "127.0.0.1", "202.10.44.139"].includes(url.hostname);
     const isViteDevPort = Number(url.port) >= 5173 && Number(url.port) <= 5199;
     return isLocalDevHost && isViteDevPort;
