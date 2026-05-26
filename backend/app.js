@@ -34,7 +34,7 @@ function isAllowedOrigin(origin) {
 
   try {
     const url = new URL(origin);
-    const isLocalDevHost = ["localhost", "127.0.0.1"].includes(url.hostname);
+    const isLocalDevHost = ["localhost", "127.0.0.1", "202.10.44.139"].includes(url.hostname);
     const isViteDevPort = Number(url.port) >= 5173 && Number(url.port) <= 5199;
     return isLocalDevHost && isViteDevPort;
   } catch {
