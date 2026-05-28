@@ -127,7 +127,7 @@ export async function ensureRankAchievementTable() {
 export async function syncRankAchievements(userId, currentRank) {
   await ensureRankAchievementTable();
   const targetIndex = rankOrder.indexOf(currentRank);
-  const earnedRanks = targetIndex > 0 ? rankOrder.slice(1, targetIndex + 1) : [];
+  const earnedRanks = rankOrder.slice(0, Math.max(targetIndex, 0) + 1);
 
   for (const rankName of earnedRanks) {
     await query(
@@ -141,7 +141,6 @@ export async function syncRankAchievements(userId, currentRank) {
     `SELECT id, rank_name, earned_at
      FROM user_rank_achievements
      WHERE user_id = :userId
-       AND rank_name <> 'Guest'
      ORDER BY earned_at ASC, id ASC`,
     { userId }
   );

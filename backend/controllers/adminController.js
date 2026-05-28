@@ -103,7 +103,8 @@ function filterLogsClause(req, userId = null) {
   if (req.query.filter === "good") filters.push("l.carbon_value > 0");
   if (req.query.filter === "bad") filters.push("l.carbon_value < 0");
   if (req.query.filter === "custom") filters.push("l.activity_id IS NULL");
-  if (req.query.filter === "default") filters.push("l.activity_id IS NOT NULL");
+  if (req.query.filter === "neutral") filters.push("l.activity_id IS NOT NULL AND l.carbon_value = 0");
+  if (req.query.filter === "default") filters.push("l.activity_id IS NOT NULL AND l.carbon_value <> 0");
   if (req.query.date) {
     filters.push("DATE(l.created_at) = :date");
     params.date = req.query.date;
@@ -127,8 +128,12 @@ async function getLogs(req, userId = null) {
             l.carbon_value AS unit,
             a.category,
             GREATEST(l.carbon_value, 0) AS eco_point,
-            CASE WHEN l.carbon_value >= 0 THEN 1 ELSE 0 END AS is_good,
-            CASE WHEN l.activity_id IS NULL THEN 'custom' ELSE 'default' END AS source,
+            CASE WHEN l.carbon_value > 0 THEN 1 ELSE 0 END AS is_good,
+            CASE
+              WHEN l.activity_id IS NULL THEN 'custom'
+              WHEN l.carbon_value = 0 THEN 'neutral'
+              ELSE 'default'
+            END AS source,
             COALESCE(l.note, '') AS description
      FROM user_activity_logs l
      JOIN users u ON u.id = l.user_id
@@ -400,7 +405,24 @@ export async function ecoBadges(req, res, next) {
 
 export async function quests(req, res, next) {
   try {
-    const rows = (await getQuestCatalog(0)).map((quest) => ({
+    const catalog = await getQuestCatalog(0);
+    const achievementRows = await query(
+      `SELECT q.id, COUNT(t.user_id) AS achieved_count
+       FROM quests q
+       LEFT JOIN (
+         SELECT u.id AS user_id, COALESCE(SUM(l.carbon_value), 0) AS total_carbon
+         FROM users u
+         LEFT JOIN user_activity_logs l ON l.user_id = u.id
+         WHERE u.role <> 'admin'
+         GROUP BY u.id
+       ) t ON t.total_carbon >= q.requirement_value
+       WHERE q.is_active = 1
+       GROUP BY q.id`
+    );
+    const achievedByQuestId = Object.fromEntries(
+      achievementRows.map((row) => [String(row.id), Number(row.achieved_count || 0)])
+    );
+    const rows = catalog.map((quest) => ({
       id: quest.id,
       slug: quest.slug,
       icon: quest.icon,
@@ -412,7 +434,8 @@ export async function quests(req, res, next) {
       reward: quest.reward,
       is_active: quest.is_active,
       active: true,
-      completed: false
+      completed: false,
+      achieved_count: achievedByQuestId[String(quest.id)] || 0
     }));
     res.json({ quests: rows });
   } catch (error) {
@@ -485,20 +508,36 @@ export async function rankLogs(req, res, next) {
   try {
     if (req.params.id) {
       await syncUserAwards(req.params.id);
+      const rows = await query(
+        `SELECT r.id, r.user_id, u.username, r.rank_name AS \`rank\`, r.earned_at AS achieved_at
+         FROM user_rank_achievements r
+         JOIN users u ON u.id = r.user_id
+         WHERE r.user_id = :userId
+         ORDER BY r.earned_at ASC, r.id ASC`,
+        { userId: req.params.id }
+      );
+      return res.json({ logs: rows });
     } else {
       const users = await query("SELECT id FROM users WHERE role <> 'admin'");
       await Promise.all(users.map((user) => syncUserAwards(user.id)));
     }
-    const userFilter = req.params.id ? "WHERE r.user_id = :userId" : "";
-    const rows = await query(
-      `SELECT r.id, r.user_id, u.username, r.rank_name AS \`rank\`, r.earned_at AS achieved_at
+
+    const counts = await query(
+      `SELECT r.rank_name AS \`rank\`, COUNT(DISTINCT r.user_id) AS achieved_count
        FROM user_rank_achievements r
        JOIN users u ON u.id = r.user_id
-       ${userFilter}
-       ORDER BY r.earned_at DESC`,
-      { userId: req.params.id || null }
+       WHERE u.role <> 'admin'
+       GROUP BY r.rank_name`
     );
-    res.json({ logs: rows });
+    const countByRank = Object.fromEntries(
+      counts.map((row) => [row.rank, Number(row.achieved_count || 0)])
+    );
+    res.json({
+      logs: ["Guest", "Explorer", "Guardian", "Hero"].map((rank) => ({
+        rank,
+        achieved_count: countByRank[rank] || 0
+      }))
+    });
   } catch (error) {
     next(error);
   }

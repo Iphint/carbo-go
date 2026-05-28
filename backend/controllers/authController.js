@@ -2,6 +2,7 @@ import bcrypt from "bcrypt";
 import { User } from "../models/userModel.js";
 import { Profile } from "../models/profileModel.js";
 import { clearAuthCookie, setAuthCookie, signToken } from "../utils/auth.js";
+import { syncUserAwards } from "../models/progressModel.js";
 
 function cleanUser(user) {
   return {
@@ -53,6 +54,9 @@ export async function login(req, res, next) {
     const token = signToken(user);
     setAuthCookie(res, token);
     const profile = await Profile.findByUserId(user.id);
+    if ((user.role || "user") !== "admin") {
+      await syncUserAwards(user.id);
+    }
 
     res.json({
       message: "Login success",
