@@ -115,10 +115,12 @@ function filterLogsClause(req, userId = null) {
 async function getLogs(req, userId = null) {
   const { page, limit, offset } = pageInfo(req);
   const { where, params } = filterLogsClause(req, userId);
+  const lang = String(req.query.lang || req.headers["x-language"] || "id").toLowerCase();
+  const activityNameColumn = lang === "en" ? "a.name_en" : "a.name_id";
   const countRows = await query(`SELECT COUNT(*) AS total FROM user_activity_logs l WHERE ${where}`, params);
   const logs = await query(
     `SELECT l.id, l.user_id, u.username, l.created_at AS date,
-            COALESCE(a.name, l.other_activity, 'Other') AS name,
+            COALESCE(NULLIF(${activityNameColumn}, ''), a.name, l.other_activity, 'Other') AS name,
             CASE
               WHEN l.activity_id IS NULL THEN 'custom'
               WHEN l.carbon_value > 0 THEN 'good'
@@ -254,6 +256,7 @@ export async function userActivityLogs(req, res, next) {
 export async function customGreenActions(req, res, next) {
   try {
     const userFilter = req.params.id ? "AND l.user_id = :userId" : "";
+    const lang = String(req.query.lang || req.headers["x-language"] || "id").toLowerCase();
     const rows = await query(
       `SELECT l.id, l.user_id, u.username,
               COALESCE(l.other_activity, 'Custom activity') AS name,
@@ -261,13 +264,18 @@ export async function customGreenActions(req, res, next) {
               'custom' AS category,
               0 AS eco_point,
               COALESCE(l.note, 'Recorded as a neutral custom action.') AS feedback,
-              'Use standard activities when possible so CU progress can be measured.' AS recommendation,
+              :recommendation AS recommendation,
               l.created_at
        FROM user_activity_logs l
        JOIN users u ON u.id = l.user_id
        WHERE l.activity_id IS NULL ${userFilter}
        ORDER BY l.created_at DESC`,
-      { userId: req.params.id || null }
+      {
+        userId: req.params.id || null,
+        recommendation: lang === "en"
+          ? "Use standard activities when possible so Journey Points can be measured."
+          : "Gunakan aktivitas standar jika memungkinkan agar Poin Perjalanan bisa dihitung."
+      }
     );
     res.json({ actions: rows });
   } catch (error) {
@@ -325,18 +333,22 @@ export async function deleteCustomGreenAction(req, res, next) {
 export async function userProgress(req, res, next) {
   try {
     const userId = req.params.id;
+    const lang = String(req.query.lang || req.headers["x-language"] || "id").toLowerCase();
     const awards = await syncUserAwards(userId);
     const [badges, milestones] = await Promise.all([
       query(
         `SELECT b.id, b.name, b.description, b.icon,
-                CONCAT('Earn ', b.requirement_value, ' CU') AS requirement,
+                CASE
+                  WHEN :lang = 'en' THEN CONCAT('Earn ', b.requirement_value, ' Journey Points')
+                  ELSE CONCAT('Dapatkan ', b.requirement_value, ' Poin Perjalanan')
+                END AS requirement,
                 CASE WHEN ub.id IS NULL THEN 0 ELSE 1 END AS achieved,
                 ub.earned_at AS achieved_at
          FROM badges b
          LEFT JOIN user_badges ub ON ub.badge_id = b.id AND ub.user_id = :userId
          WHERE b.name <> 'Earth Guardian'
          ORDER BY b.requirement_value`,
-        { userId }
+        { userId, lang }
       ),
       query(
         `SELECT m.id, m.name, m.description, m.target_value AS target,
@@ -385,9 +397,13 @@ export async function milestones(req, res, next) {
 
 export async function ecoBadges(req, res, next) {
   try {
+    const lang = String(req.query.lang || req.headers["x-language"] || "id").toLowerCase();
     const rows = await query(
       `SELECT b.id, b.name, b.description, b.icon, b.requirement_type, b.requirement_value,
-              CONCAT('Earn ', b.requirement_value, ' CU') AS requirement,
+              CASE
+                WHEN :lang = 'en' THEN CONCAT('Earn ', b.requirement_value, ' Journey Points')
+                ELSE CONCAT('Dapatkan ', b.requirement_value, ' Poin Perjalanan')
+              END AS requirement,
               COUNT(ub.id) AS achieved_count,
               MAX(ub.earned_at) AS achieved_at,
               CASE WHEN COUNT(ub.id) > 0 THEN 1 ELSE 0 END AS achieved
@@ -395,7 +411,8 @@ export async function ecoBadges(req, res, next) {
        LEFT JOIN user_badges ub ON ub.badge_id = b.id
        WHERE b.name <> 'Earth Guardian'
        GROUP BY b.id
-       ORDER BY b.requirement_value`
+       ORDER BY b.requirement_value`,
+      { lang }
     );
     res.json({ badges: rows });
   } catch (error) {
@@ -538,6 +555,29 @@ export async function rankLogs(req, res, next) {
         achieved_count: countByRank[rank] || 0
       }))
     });
+  } catch (error) {
+    next(error);
+  }
+}
+
+export async function createRankLog(req, res, next) {
+  try {
+    const { user_id, rank_name } = req.body;
+    const validRanks = ["Guest", "Explorer", "Guardian", "Hero"];
+    if (!user_id || !validRanks.includes(rank_name)) {
+      return res.status(400).json({ message: "user_id and valid rank_name are required" });
+    }
+
+    const users = await query("SELECT id FROM users WHERE id = :userId AND role <> 'admin'", { userId: user_id });
+    if (!users.length) return res.status(404).json({ message: "User not found" });
+
+    await query(
+      `INSERT INTO user_rank_achievements (user_id, rank_name)
+       VALUES (:userId, :rankName)
+       ON DUPLICATE KEY UPDATE earned_at = earned_at`,
+      { userId: user_id, rankName: rank_name }
+    );
+    res.status(201).json({ message: "Rank achievement added" });
   } catch (error) {
     next(error);
   }

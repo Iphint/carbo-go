@@ -17,6 +17,7 @@ import {
   leaderboard,
   milestones,
   quests,
+  createRankLog,
   rankLogs,
   updateActivityLog,
   updateBadge,
@@ -62,6 +63,7 @@ router.post("/quests", createQuest);
 router.put("/quests/:id", updateQuest);
 router.delete("/quests/:id", deleteQuest);
 router.get("/rank-logs", rankLogs);
+router.post("/rank-logs", createRankLog);
 router.get("/leaderboard", leaderboard);
 
 export default router;
