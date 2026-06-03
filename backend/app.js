@@ -15,6 +15,11 @@ import { errorHandler, notFound } from "./middleware/errorHandler.js";
 
 dotenv.config();
 
+const envOrigins = (process.env.CORS_ORIGINS || "")
+  .split(",")
+  .map((origin) => origin.trim())
+  .filter(Boolean);
+
 const allowedOrigins = new Set([
   "http://localhost:5173",
   "http://localhost:5174",
@@ -28,7 +33,19 @@ const allowedOrigins = new Set([
   "https://admin.carbongo.site",
   process.env.FRONTEND_URL,
   process.env.DASHBOARD_URL,
+  ...envOrigins,
 ].filter(Boolean));
+
+function isPrivateLanHost(hostname) {
+  return (
+    hostname === "localhost" ||
+    hostname === "127.0.0.1" ||
+    hostname === "202.10.44.139" ||
+    /^192\.168\.\d{1,3}\.\d{1,3}$/.test(hostname) ||
+    /^10\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(hostname) ||
+    /^172\.(1[6-9]|2\d|3[0-1])\.\d{1,3}\.\d{1,3}$/.test(hostname)
+  );
+}
 
 function isAllowedOrigin(origin) {
   if (!origin) return true;
@@ -37,9 +54,9 @@ function isAllowedOrigin(origin) {
   try {
     const url = new URL(origin);
     if (url.hostname === "admin.carbongo.site") return true;
-    const isLocalDevHost = ["localhost", "127.0.0.1", "202.10.44.139"].includes(url.hostname);
+    const isDev = process.env.NODE_ENV !== "production";
     const isViteDevPort = Number(url.port) >= 5173 && Number(url.port) <= 5199;
-    return isLocalDevHost && isViteDevPort;
+    return isDev && isPrivateLanHost(url.hostname) && isViteDevPort;
   } catch {
     return false;
   }
@@ -53,6 +70,7 @@ app.use(cors({
     if (isAllowedOrigin(origin)) {
       return callback(null, true);
     }
+    console.warn(`[CORS] Blocked origin: ${origin}`);
     return callback(new Error("Not allowed by CORS"));
   },
   credentials: true,
