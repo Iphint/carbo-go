@@ -2,6 +2,7 @@ import { query } from "../config/db.js";
 import { getQuestCatalog, syncUserAwards } from "../models/progressModel.js";
 
 const PAGE_SIZE = 20;
+const ADMIN_RANK_TYPES = ["Guest", "Explorer", "Guardian", "Hero"];
 
 function pageInfo(req) {
   const page = Math.max(1, Number(req.query.page || 1));
@@ -21,8 +22,22 @@ function dateRange(filter) {
 }
 
 function rankFromCounts({ questCount, badgeCount, milestoneCount }) {
-  const ranks = ["Guest", "Explorer", "Guardian", "Hero"];
-  return ranks[Math.min(Number(questCount), Number(badgeCount), Number(milestoneCount), 3)] || "Guest";
+  return ADMIN_RANK_TYPES[Math.min(Number(questCount), Number(badgeCount), Number(milestoneCount), 3)] || "Guest";
+}
+
+async function ensureRankTypesTable() {
+  await query(
+    `CREATE TABLE IF NOT EXISTS rank_types (
+      id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+      name VARCHAR(40) NOT NULL UNIQUE,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+    )`
+  );
+
+  for (const rankName of ADMIN_RANK_TYPES) {
+    await query("INSERT IGNORE INTO rank_types (name) VALUES (:rankName)", { rankName });
+  }
 }
 
 async function userAwardCounts(userId, totalCarbon) {
@@ -523,6 +538,8 @@ export async function deleteQuest(req, res, next) {
 
 export async function rankLogs(req, res, next) {
   try {
+    await ensureRankTypesTable();
+
     if (req.params.id) {
       await syncUserAwards(req.params.id);
       const rows = await query(
@@ -549,10 +566,19 @@ export async function rankLogs(req, res, next) {
     const countByRank = Object.fromEntries(
       counts.map((row) => [row.rank, Number(row.achieved_count || 0)])
     );
+    const rankTypes = await query(
+      `SELECT id, name
+       FROM rank_types
+       ORDER BY FIELD(name, 'Guest', 'Explorer', 'Guardian', 'Hero'), name ASC`
+    );
+
     res.json({
-      logs: ["Guest", "Explorer", "Guardian", "Hero"].map((rank) => ({
-        rank,
-        achieved_count: countByRank[rank] || 0
+      logs: rankTypes.map((row) => ({
+        id: row.id,
+        rank: row.name,
+        rank_name: row.name,
+        is_default: ADMIN_RANK_TYPES.includes(row.name),
+        achieved_count: countByRank[row.name] || 0
       }))
     });
   } catch (error) {
@@ -562,22 +588,71 @@ export async function rankLogs(req, res, next) {
 
 export async function createRankLog(req, res, next) {
   try {
-    const { user_id, rank_name } = req.body;
-    const validRanks = ["Guest", "Explorer", "Guardian", "Hero"];
-    if (!user_id || !validRanks.includes(rank_name)) {
-      return res.status(400).json({ message: "user_id and valid rank_name are required" });
+    await ensureRankTypesTable();
+    const rankName = String(req.body.rank_name || "").trim();
+
+    if (!rankName || rankName.length > 40) {
+      return res.status(400).json({ message: "rank_name is required and must be 40 characters or less" });
     }
 
-    const users = await query("SELECT id FROM users WHERE id = :userId AND role <> 'admin'", { userId: user_id });
-    if (!users.length) return res.status(404).json({ message: "User not found" });
+    await query(
+      `INSERT INTO rank_types (name)
+       VALUES (:rankName)
+       ON DUPLICATE KEY UPDATE updated_at = CURRENT_TIMESTAMP`,
+      { rankName }
+    );
+    res.status(201).json({ message: "Rank type saved" });
+  } catch (error) {
+    next(error);
+  }
+}
+
+export async function updateRankLog(req, res, next) {
+  try {
+    await ensureRankTypesTable();
+    const rankName = String(req.body.rank_name || "").trim();
+
+    if (!rankName || rankName.length > 40) {
+      return res.status(400).json({ message: "rank_name is required and must be 40 characters or less" });
+    }
+
+    const rows = await query("SELECT id, name FROM rank_types WHERE id = :id", { id: req.params.id });
+    if (!rows.length) return res.status(404).json({ message: "Rank type not found" });
+    if (ADMIN_RANK_TYPES.includes(rows[0].name)) {
+      return res.status(400).json({ message: "Default rank types cannot be edited" });
+    }
 
     await query(
-      `INSERT INTO user_rank_achievements (user_id, rank_name)
-       VALUES (:userId, :rankName)
-       ON DUPLICATE KEY UPDATE earned_at = earned_at`,
-      { userId: user_id, rankName: rank_name }
+      "UPDATE rank_types SET name = :rankName WHERE id = :id",
+      { id: req.params.id, rankName }
     );
-    res.status(201).json({ message: "Rank achievement added" });
+    await query(
+      "UPDATE user_rank_achievements SET rank_name = :rankName WHERE rank_name = :oldRankName",
+      { rankName, oldRankName: rows[0].name }
+    );
+
+    res.json({ message: "Rank type updated" });
+  } catch (error) {
+    if (error.code === "ER_DUP_ENTRY") {
+      return res.status(409).json({ message: "Rank type already exists" });
+    }
+    next(error);
+  }
+}
+
+export async function deleteRankLog(req, res, next) {
+  try {
+    await ensureRankTypesTable();
+    const rows = await query("SELECT id, name FROM rank_types WHERE id = :id", { id: req.params.id });
+    if (!rows.length) return res.status(404).json({ message: "Rank type not found" });
+    if (ADMIN_RANK_TYPES.includes(rows[0].name)) {
+      return res.status(400).json({ message: "Default rank types cannot be deleted" });
+    }
+
+    await query("DELETE FROM rank_types WHERE id = :id", { id: req.params.id });
+    await query("DELETE FROM user_rank_achievements WHERE rank_name = :rankName", { rankName: rows[0].name });
+
+    res.json({ message: "Rank type deleted" });
   } catch (error) {
     next(error);
   }

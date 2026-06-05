@@ -12,6 +12,7 @@ import {
   deleteCustomGreenAction,
   deleteMilestone,
   deleteQuest,
+  deleteRankLog,
   deleteUser,
   ecoBadges,
   leaderboard,
@@ -19,6 +20,7 @@ import {
   quests,
   createRankLog,
   rankLogs,
+  updateRankLog,
   updateActivityLog,
   updateBadge,
   updateCustomGreenAction,
@@ -64,6 +66,8 @@ router.put("/quests/:id", updateQuest);
 router.delete("/quests/:id", deleteQuest);
 router.get("/rank-logs", rankLogs);
 router.post("/rank-logs", createRankLog);
+router.put("/rank-logs/:id", updateRankLog);
+router.delete("/rank-logs/:id", deleteRankLog);
 router.get("/leaderboard", leaderboard);
 
 export default router;

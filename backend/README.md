@@ -10,13 +10,25 @@ frontend/  Vite + React + React Router, protected route, onboarding guard, axios
 database/  schema.sql untuk import via phpMyAdmin
 ```
 
-## Setup Database via phpMyAdmin
+## Setup Database
+
+Opsi via script backend:
+
+```bash
+cd backend
+npm run migrate
+npm run seed
+```
+
+`npm run migrate` membaca `database/schema.sql` dan semua file `database/migrate_*.sql`.
+
+Opsi via phpMyAdmin:
 
 1. Buka phpMyAdmin.
 2. Pilih tab SQL atau Import.
 3. Import file `database/schema.sql`.
-4. Pastikan database `carbon_go` sudah terbuat dan tabel seed `activities`, `badges`, dan `milestones` sudah terisi.
-5. Jika sebelumnya sudah pernah import schema lama, cara paling bersih adalah drop database `carbon_go` lalu import ulang `database/schema.sql`. Alternatifnya, jalankan `database/migrate_activity_feedback_i18n.sql`, lalu jalankan seed ulang. Schema terbaru sudah menyimpan nama dan feedback activity dalam EN/ID.
+4. Jika sebelumnya sudah pernah import schema lama, jalankan juga `database/migrate_activity_feedback_i18n.sql`.
+5. Jalankan `npm run seed` dari folder `backend` untuk membuat admin default.
 
 ## Setup Backend
 
@@ -24,6 +36,7 @@ database/  schema.sql untuk import via phpMyAdmin
 cd backend
 npm install
 cp .env.example .env
+npm run migrate
 npm run seed
 npm run dev
 ```
@@ -81,6 +94,7 @@ Untuk menjalankan seed database dan membuat 30 user test lengkap dengan profile 
 
 ```bash
 cd backend
+docker compose exec backend npm run migrate
 docker compose exec backend npm run seed
 docker compose exec backend npm run seed:test
 ```
